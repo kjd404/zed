@@ -320,3 +320,31 @@ fn parse_line(line: &str) -> LanguageModelCompletionEvent {
     }
     LanguageModelCompletionEvent::Text(line.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::TestAppContext;
+    use language_model::LanguageModelRegistry;
+
+    #[gpui::test]
+    fn registers_with_language_model_registry(cx: &mut TestAppContext) {
+        // Initialize a test registry and register the Codex CLI provider
+        LanguageModelRegistry::test(cx);
+        cx.update(|app| {
+            let registry = LanguageModelRegistry::global(app);
+            registry.update(app, |registry, cx| {
+                registry.register_provider(CodexCliLanguageModelProvider::new(cx), cx);
+            });
+        });
+
+        // Ensure the provider is now part of the registry
+        let is_registered = cx.update(|app| {
+            LanguageModelRegistry::read_global(app)
+                .providers()
+                .iter()
+                .any(|p| p.id() == PROVIDER_ID)
+        });
+        assert!(is_registered);
+    }
+}
