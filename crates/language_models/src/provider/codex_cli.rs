@@ -23,7 +23,7 @@ const PROVIDER_ID: LanguageModelProviderId = LanguageModelProviderId::new("codex
 const PROVIDER_NAME: LanguageModelProviderName = LanguageModelProviderName::new("Codex CLI");
 const CODEX_CLI_SITE: &str = "https://github.com/microsoft/Codex-CLI";
 
-#[derive(Default)]
+
 pub struct CodexCliLanguageModelProvider {
     state: gpui::Entity<State>,
 }
