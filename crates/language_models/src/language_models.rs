@@ -15,6 +15,7 @@ use crate::provider::anthropic::AnthropicLanguageModelProvider;
 use crate::provider::bedrock::BedrockLanguageModelProvider;
 use crate::provider::cloud::CloudLanguageModelProvider;
 use crate::provider::copilot_chat::CopilotChatLanguageModelProvider;
+use crate::provider::codex_cli::CodexCliLanguageModelProvider;
 use crate::provider::google::GoogleLanguageModelProvider;
 use crate::provider::lmstudio::LmStudioLanguageModelProvider;
 use crate::provider::mistral::MistralLanguageModelProvider;
@@ -128,6 +129,7 @@ fn register_language_model_providers(
         DeepSeekLanguageModelProvider::new(client.http_client(), cx),
         cx,
     );
+    registry.register_provider(CodexCliLanguageModelProvider::new(cx), cx);
     registry.register_provider(
         GoogleLanguageModelProvider::new(client.http_client(), cx),
         cx,
