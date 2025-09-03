@@ -1762,6 +1762,9 @@
     "google": {
       "api_url": "https://generativelanguage.googleapis.com"
     },
+    "codex_cli": {
+      "binary_path": "codex"
+    },
     "ollama": {
       "api_url": "http://localhost:11434"
     },

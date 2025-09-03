@@ -2,7 +2,7 @@ use std::any::TypeId;
 
 use anyhow::Context as _;
 use fs::Fs;
-use gpui::{AnyElement, App, AppContext as _, ReadGlobal as _, Window};
+use gpui::{AnyElement, App, AppContext as _, IntoElement, ParentElement, ReadGlobal as _, Window, div};
 use smallvec::SmallVec;
 
 use crate::SettingsStore;
@@ -174,3 +174,19 @@ numeric_stepper_for_num_type!(u64, U64);
 numeric_stepper_for_num_type!(u32, U32);
 // todo(settings_ui) is there a better ui for f32?
 numeric_stepper_for_num_type!(f32, F32);
+
+impl SettingsUi for String {
+    fn settings_ui_item() -> SettingsUiItem {
+        SettingsUiItem::Single(SettingsUiItemSingle::Custom(Box::new(|settings_value, _window, _cx| {
+            div()
+                .child(format!("Item: {}", settings_value.path.join(".")))
+                .into_any_element()
+        })))
+    }
+}
+
+impl SettingsUi for Option<String> {
+    fn settings_ui_item() -> SettingsUiItem {
+        <String as SettingsUi>::settings_ui_item()
+    }
+}

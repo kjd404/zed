@@ -24,6 +24,11 @@ use crate::provider::{
     x_ai::XAiSettings,
 };
 
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct CodexCliSettings {
+    pub binary_path: String,
+}
+
 /// Initializes the language model settings.
 pub fn init_settings(cx: &mut App) {
     AllLanguageModelSettings::register(cx);
@@ -33,6 +38,7 @@ pub fn init_settings(cx: &mut App) {
 pub struct AllLanguageModelSettings {
     pub anthropic: AnthropicSettings,
     pub bedrock: AmazonBedrockSettings,
+    pub codex_cli: CodexCliSettings,
     pub deepseek: DeepSeekSettings,
     pub google: GoogleSettings,
     pub lmstudio: LmStudioSettings,
@@ -50,6 +56,7 @@ pub struct AllLanguageModelSettings {
 pub struct AllLanguageModelSettingsContent {
     pub anthropic: Option<AnthropicSettingsContent>,
     pub bedrock: Option<AmazonBedrockSettingsContent>,
+    pub codex_cli: Option<CodexCliSettingsContent>,
     pub deepseek: Option<DeepseekSettingsContent>,
     pub google: Option<GoogleSettingsContent>,
     pub lmstudio: Option<LmStudioSettingsContent>,
@@ -77,6 +84,12 @@ pub struct AmazonBedrockSettingsContent {
     region: Option<String>,
     profile: Option<String>,
     authentication_method: Option<provider::bedrock::BedrockAuthMethod>,
+}
+
+#[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema, SettingsUi)]
+#[settings_ui(group = "Codex CLI")]
+pub struct CodexCliSettingsContent {
+    pub binary_path: Option<String>,
 }
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
@@ -189,6 +202,13 @@ impl settings::Settings for AllLanguageModelSettings {
             merge(
                 &mut settings.bedrock.endpoint,
                 bedrock.as_ref().map(|s| s.endpoint_url.clone()),
+            );
+
+            // Codex CLI
+            let codex_cli = value.codex_cli.clone();
+            merge(
+                &mut settings.codex_cli.binary_path,
+                codex_cli.as_ref().and_then(|s| s.binary_path.clone()),
             );
 
             // Ollama
