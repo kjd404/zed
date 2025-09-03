@@ -5,6 +5,8 @@
 
 Welcome to Zed, a high-performance, multiplayer code editor from the creators of [Atom](https://github.com/atom/atom) and [Tree-sitter](https://github.com/tree-sitter/tree-sitter).
 
+Zed supports AI-powered workflows with local agents like Codex CLI.
+
 ---
 
 ### Installation

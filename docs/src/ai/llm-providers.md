@@ -18,6 +18,7 @@ Here's all the supported LLM providers for which you can use your own API keys:
 
 - [Amazon Bedrock](#amazon-bedrock)
 - [Anthropic](#anthropic)
+- [Codex CLI](#codex-cli)
 - [DeepSeek](#deepseek)
 - [GitHub Copilot Chat](#github-copilot-chat)
 - [Google AI](#google-ai)
@@ -158,6 +159,42 @@ You can configure a model to use [extended thinking](https://docs.anthropic.com/
   }
 }
 ```
+
+### Codex CLI {#codex-cli}
+
+1. Install Codex CLI:
+
+   ```sh
+   npm i -g @openai/codex
+   # or
+   brew install openai/codex/codex
+   ```
+
+2. Authenticate by running:
+
+   ```sh
+   codex auth login
+   ```
+
+   Alternatively, add your API key to `~/.codex/config.toml`:
+
+   ```toml
+   api_key = "your-api-key"
+   ```
+
+3. Add the Codex CLI provider to your Zed `settings.json`:
+
+   ```json
+   {
+     "language_models": {
+       "codex_cli": {
+         "binary_path": "codex"
+       }
+     }
+   }
+   ```
+
+Codex CLI stores its configuration in `~/.codex/config.toml` and will read any `AGENTS.md` file in your project for additional instructions.
 
 ### DeepSeek {#deepseek}
 
