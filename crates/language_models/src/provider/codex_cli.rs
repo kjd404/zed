@@ -1,22 +1,27 @@
-use anyhow::{anyhow, Context as _, Result};
-use futures::{FutureExt, StreamExt, future::BoxFuture, stream::{self, BoxStream}};
+use crate::ui::InstructionListItem;
+use anyhow::{Context as _, Result, anyhow};
 use futures::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use futures::{
+    FutureExt, StreamExt,
+    future::BoxFuture,
+    stream::{self, BoxStream},
+};
 use gpui::{AnyView, App, AsyncApp, Context, Task, Window};
 use language_model::{
-    AuthenticateError, LanguageModel, LanguageModelCompletionError,
-    LanguageModelCompletionEvent, LanguageModelId, LanguageModelName,
-    LanguageModelProvider, LanguageModelProviderId, LanguageModelProviderName,
-    LanguageModelProviderState, LanguageModelRequest, LanguageModelToolChoice,
-    Role, StopReason,
+    AuthenticateError, LanguageModel, LanguageModelCompletionError, LanguageModelCompletionEvent,
+    LanguageModelId, LanguageModelName, LanguageModelProvider, LanguageModelProviderId,
+    LanguageModelProviderName, LanguageModelProviderState, LanguageModelRequest,
+    LanguageModelToolChoice, Role, StopReason,
 };
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use ui::prelude::*;
+use ui::{List, prelude::*};
 use util::{command::new_smol_command, paths};
 
 const PROVIDER_ID: LanguageModelProviderId = LanguageModelProviderId::new("codex-cli");
 const PROVIDER_NAME: LanguageModelProviderName = LanguageModelProviderName::new("Codex CLI");
+const CODEX_CLI_SITE: &str = "https://github.com/microsoft/Codex-CLI";
 
 #[derive(Default)]
 pub struct CodexCliLanguageModelProvider {
@@ -52,9 +57,11 @@ impl State {
             };
 
             #[derive(Deserialize)]
-            struct CodexConfig { api_key: Option<String> }
-            let config: CodexConfig = toml::from_str(&contents)
-                .map_err(|e| AuthenticateError::Other(e.into()))?;
+            struct CodexConfig {
+                api_key: Option<String>,
+            }
+            let config: CodexConfig =
+                toml::from_str(&contents).map_err(|e| AuthenticateError::Other(e.into()))?;
             let api_key = config
                 .api_key
                 .ok_or(AuthenticateError::CredentialsNotFound)?;
@@ -94,8 +101,15 @@ impl LanguageModelProviderState for CodexCliLanguageModelProvider {
 }
 
 impl LanguageModelProvider for CodexCliLanguageModelProvider {
-    fn id(&self) -> LanguageModelProviderId { PROVIDER_ID }
-    fn name(&self) -> LanguageModelProviderName { PROVIDER_NAME }
+    fn id(&self) -> LanguageModelProviderId {
+        PROVIDER_ID
+    }
+    fn name(&self) -> LanguageModelProviderName {
+        PROVIDER_NAME
+    }
+    fn icon(&self) -> IconName {
+        IconName::Ai
+    }
 
     fn default_model(&self, _cx: &App) -> Option<Arc<dyn LanguageModel>> {
         Some(self.create_model())
@@ -123,10 +137,33 @@ impl LanguageModelProvider for CodexCliLanguageModelProvider {
         _window: &mut Window,
         cx: &mut App,
     ) -> AnyView {
-        cx.new(|_| {
-            v_flex().child(Label::new(
-                "Codex CLI uses ~/.codex/config.toml for authentication.",
-            ))
+        cx.new(|cx| {
+            v_flex()
+                .gap_2()
+                .child(
+                    v_flex().gap_1().child(Label::new(
+                        "Codex CLI uses `~/.codex/config.toml` for authentication.",
+                    ))
+                    .child(
+                        List::new()
+                            .child(InstructionListItem::text_only(
+                                "Install the `codex` binary and ensure it is available on your PATH.",
+                            ))
+                            .child(InstructionListItem::text_only(
+                                "Authenticate by running `codex auth login` or by adding `api_key` to `~/.codex/config.toml`.",
+                            )),
+                    ),
+                )
+                .child(
+                    Button::new("codex-cli-site", "Codex CLI")
+                        .style(ButtonStyle::Subtle)
+                        .icon(IconName::ArrowUpRight)
+                        .icon_size(IconSize::Small)
+                        .icon_color(Color::Muted)
+                        .on_click(move |_, _window, cx| {
+                            cx.open_url(CODEX_CLI_SITE);
+                        }),
+                )
         })
         .into()
     }
@@ -148,19 +185,35 @@ struct CodexCliLanguageModel {
 }
 
 impl LanguageModel for CodexCliLanguageModel {
-    fn id(&self) -> LanguageModelId { self.id.clone() }
-    fn name(&self) -> LanguageModelName { self.name.clone() }
-    fn provider_id(&self) -> LanguageModelProviderId { PROVIDER_ID }
-    fn provider_name(&self) -> LanguageModelProviderName { PROVIDER_NAME }
+    fn id(&self) -> LanguageModelId {
+        self.id.clone()
+    }
+    fn name(&self) -> LanguageModelName {
+        self.name.clone()
+    }
+    fn provider_id(&self) -> LanguageModelProviderId {
+        PROVIDER_ID
+    }
+    fn provider_name(&self) -> LanguageModelProviderName {
+        PROVIDER_NAME
+    }
 
     fn telemetry_id(&self) -> String {
         format!("codex-cli/{}", self.model)
     }
 
-    fn supports_images(&self) -> bool { false }
-    fn supports_tools(&self) -> bool { false }
-    fn supports_tool_choice(&self, _choice: LanguageModelToolChoice) -> bool { false }
-    fn max_token_count(&self) -> u64 { 0 }
+    fn supports_images(&self) -> bool {
+        false
+    }
+    fn supports_tools(&self) -> bool {
+        false
+    }
+    fn supports_tool_choice(&self, _choice: LanguageModelToolChoice) -> bool {
+        false
+    }
+    fn max_token_count(&self) -> u64 {
+        0
+    }
 
     fn count_tokens(
         &self,
@@ -187,8 +240,9 @@ impl LanguageModel for CodexCliLanguageModel {
             let api_key = cx
                 .read_entity(&state, |state, _| state.api_key.clone())
                 .ok_or_else(|| LanguageModelCompletionError::Other(anyhow!("App state dropped")))?;
-            let api_key = api_key
-                .ok_or(LanguageModelCompletionError::NoApiKey { provider: PROVIDER_NAME })?;
+            let api_key = api_key.ok_or(LanguageModelCompletionError::NoApiKey {
+                provider: PROVIDER_NAME,
+            })?;
 
             let mut cmd = new_smol_command("codex");
             cmd.arg("exec").arg("--model").arg(&model);
@@ -266,4 +320,3 @@ fn parse_line(line: &str) -> LanguageModelCompletionEvent {
     }
     LanguageModelCompletionEvent::Text(line.to_string())
 }
-

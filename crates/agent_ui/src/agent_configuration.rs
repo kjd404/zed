@@ -86,7 +86,7 @@ impl AgentConfiguration {
                     }
                 }
                 language_model::Event::RemovedProvider(provider_id) => {
-                    this.remove_provider_configuration_view(provider_id);
+                    this.remove_provider_configuration_view(provider_id, cx);
                 }
                 _ => {}
             },
@@ -124,9 +124,14 @@ impl AgentConfiguration {
         }
     }
 
-    fn remove_provider_configuration_view(&mut self, provider_id: &LanguageModelProviderId) {
+    fn remove_provider_configuration_view(
+        &mut self,
+        provider_id: &LanguageModelProviderId,
+        cx: &mut Context<Self>,
+    ) {
         self.configuration_views_by_provider.remove(provider_id);
         self.expanded_provider_configurations.remove(provider_id);
+        cx.notify();
     }
 
     fn add_provider_configuration_view(
@@ -142,6 +147,7 @@ impl AgentConfiguration {
         );
         self.configuration_views_by_provider
             .insert(provider.id(), configuration_view);
+        cx.notify();
     }
 }
 
