@@ -1,12 +1,13 @@
+use crate::ui::InstructionListItem;
 use crate::{AllLanguageModelSettings, CodexCliSettings};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use futures::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use futures::{
+    FutureExt, StreamExt,
     future::BoxFuture,
     stream::{self, BoxStream},
-    FutureExt, StreamExt,
 };
-use gpui::{AnyView, App, AppContext, AsyncApp, Context, EmptyView, Task, Window};
+use gpui::{AnyView, App, AppContext, AsyncApp, Context, Task, Window};
 use language_model::{
     AuthenticateError, LanguageModel, LanguageModelCompletionError, LanguageModelCompletionEvent,
     LanguageModelId, LanguageModelName, LanguageModelProvider, LanguageModelProviderId,
@@ -17,8 +18,8 @@ use serde::Deserialize;
 use settings::Settings;
 use std::path::PathBuf;
 use std::sync::Arc;
-use ui::IconName;
-use util::{command::new_smol_command, paths};
+use ui::{ButtonLike, IconName, Indicator, List, prelude::*};
+use util::{ResultExt, command::new_smol_command, paths};
 
 const PROVIDER_ID: LanguageModelProviderId = LanguageModelProviderId::new("codex-cli");
 const PROVIDER_NAME: LanguageModelProviderName = LanguageModelProviderName::new("Codex CLI");
@@ -139,7 +140,8 @@ impl LanguageModelProvider for CodexCliLanguageModelProvider {
         _window: &mut Window,
         cx: &mut App,
     ) -> AnyView {
-        cx.new(|_| EmptyView).into()
+        let state = self.state.clone();
+        cx.new(|cx| ConfigurationView::new(state, cx)).into()
     }
 
     fn reset_credentials(&self, cx: &mut App) -> Task<Result<()>> {
@@ -323,6 +325,123 @@ impl LanguageModel for CodexCliLanguageModel {
             Ok(Box::pin(stream) as BoxStream<_>)
         }
         .boxed()
+    }
+}
+
+struct ConfigurationView {
+    state: gpui::Entity<State>,
+    load_credentials_task: Option<Task<()>>,
+}
+
+impl ConfigurationView {
+    pub fn new(state: gpui::Entity<State>, cx: &mut Context<Self>) -> Self {
+        cx.observe(&state, |_, _, cx| {
+            cx.notify();
+        })
+        .detach();
+
+        let load_credentials_task = Some(cx.spawn({
+            let state = state.clone();
+            async move |this, cx| {
+                if let Some(task) = state
+                    .update(cx, |state, cx| state.authenticate(cx))
+                    .log_err()
+                {
+                    let _ = task.await;
+                }
+                this.update(cx, |this, cx| {
+                    this.load_credentials_task = None;
+                    cx.notify();
+                })
+                .log_err();
+            }
+        }));
+
+        Self {
+            state,
+            load_credentials_task,
+        }
+    }
+
+    fn retry_auth(&self, cx: &mut App) {
+        self.state
+            .update(cx, |state, cx| state.authenticate(cx))
+            .detach_and_log_err(cx);
+    }
+}
+
+impl Render for ConfigurationView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let is_authenticated = self.state.read(cx).is_authenticated();
+
+        let intro = "Use Codex CLI to access Codex models.";
+
+        if self.load_credentials_task.is_some() {
+            div()
+                .child(Label::new("Checking credentials..."))
+                .into_any()
+        } else {
+            v_flex()
+                .gap_2()
+                .child(
+                    v_flex().gap_1().child(Label::new(intro)).child(
+                        List::new()
+                            .child(InstructionListItem::new(
+                                "Install the Codex CLI from",
+                                Some("the Codex CLI repository"),
+                                Some(CODEX_CLI_SITE),
+                            ))
+                            .child(InstructionListItem::text_only(
+                                "Run `codex auth login` or edit `~/.codex/config.toml` with your API key.",
+                            ))
+                            .child(InstructionListItem::text_only(
+                                "Add `codex-cli` to `settings.json` to enable this provider.",
+                            )),
+                    ),
+                )
+                .child(
+                    h_flex()
+                        .w_full()
+                        .justify_between()
+                        .gap_2()
+                        .child(
+                            Button::new("codex-cli-site", "Codex CLI")
+                                .style(ButtonStyle::Subtle)
+                                .icon(IconName::ArrowUpRight)
+                                .icon_size(IconSize::Small)
+                                .icon_color(Color::Muted)
+                                .on_click(move |_, _, cx| cx.open_url(CODEX_CLI_SITE))
+                                .into_any_element(),
+                        )
+                        .map(|this| {
+                            if is_authenticated {
+                                this.child(
+                                    ButtonLike::new("connected")
+                                        .disabled(true)
+                                        .cursor_style(gpui::CursorStyle::Arrow)
+                                        .child(
+                                            h_flex()
+                                                .gap_2()
+                                                .child(Indicator::dot().color(Color::Success))
+                                                .child(Label::new("Connected"))
+                                                .into_any_element(),
+                                        ),
+                                )
+                            } else {
+                                this.child(
+                                    Button::new("retry_codex_cli", "Connect")
+                                        .icon_position(IconPosition::Start)
+                                        .icon_size(IconSize::XSmall)
+                                        .icon(IconName::PlayFilled)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.retry_auth(cx)
+                                        })),
+                                )
+                            }
+                        }),
+                )
+                .into_any()
+        }
     }
 }
 
