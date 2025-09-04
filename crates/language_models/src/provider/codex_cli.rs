@@ -23,7 +23,7 @@ use util::{ResultExt, command::new_smol_command, paths};
 
 const PROVIDER_ID: LanguageModelProviderId = LanguageModelProviderId::new("codex-cli");
 const PROVIDER_NAME: LanguageModelProviderName = LanguageModelProviderName::new("Codex CLI");
-const CODEX_CLI_SITE: &str = "https://github.com/microsoft/Codex-CLI";
+const CODEX_CLI_SITE: &str = "https://github.com/openai/codex";
 
 pub struct CodexCliLanguageModelProvider {
     state: gpui::Entity<State>,
