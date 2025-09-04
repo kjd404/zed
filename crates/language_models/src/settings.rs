@@ -27,6 +27,14 @@ use crate::provider::{
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodexCliSettings {
     pub binary_path: String,
+    pub mcp_servers: HashMap<String, CodexCliMcpServerSettings>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct CodexCliMcpServerSettings {
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
 }
 
 /// Initializes the language model settings.
@@ -86,10 +94,20 @@ pub struct AmazonBedrockSettingsContent {
     authentication_method: Option<provider::bedrock::BedrockAuthMethod>,
 }
 
-#[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema, SettingsUi)]
-#[settings_ui(group = "Codex CLI")]
+#[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct CodexCliSettingsContent {
     pub binary_path: Option<String>,
+    pub mcp_servers: Option<Vec<CodexCliMcpServerSettingsContent>>,
+}
+
+#[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema, SettingsUi)]
+pub struct CodexCliMcpServerSettingsContent {
+    pub name: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
 }
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
@@ -210,6 +228,23 @@ impl settings::Settings for AllLanguageModelSettings {
                 &mut settings.codex_cli.binary_path,
                 codex_cli.as_ref().and_then(|s| s.binary_path.clone()),
             );
+            if let Some(codex_cli) = codex_cli {
+                if let Some(mcp_servers) = codex_cli.mcp_servers {
+                    settings.codex_cli.mcp_servers = mcp_servers
+                        .into_iter()
+                        .map(|server| {
+                            (
+                                server.name.clone(),
+                                CodexCliMcpServerSettings {
+                                    command: server.command,
+                                    args: server.args,
+                                    env: server.env,
+                                },
+                            )
+                        })
+                        .collect();
+                }
+            }
 
             // Ollama
             let ollama = value.ollama.clone();

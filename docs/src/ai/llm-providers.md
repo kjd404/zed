@@ -188,13 +188,23 @@ You can configure a model to use [extended thinking](https://docs.anthropic.com/
    {
      "language_models": {
        "codex_cli": {
-         "binary_path": "codex"
-       }
-     }
-   }
-   ```
+        "binary_path": "codex",
+        "mcp_servers": [
+          {
+            "name": "server-name",
+            "command": "npx",
+            "args": ["-y", "mcp-server"],
+            "env": { "API_KEY": "value" }
+          }
+        ]
+        }
+      }
+    }
+    ```
 
 Codex CLI stores its configuration in `~/.codex/config.toml` and will read any `AGENTS.md` file in your project for additional instructions.
+
+When MCP servers are configured, the tools they expose will appear in Zed’s agent panel alongside other available tools.
 
 ### DeepSeek {#deepseek}
 

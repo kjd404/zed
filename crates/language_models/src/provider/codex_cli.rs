@@ -1,28 +1,28 @@
-use crate::ui::InstructionListItem;
-use anyhow::{Context as _, Result, anyhow};
+use crate::{AllLanguageModelSettings, CodexCliSettings};
+use anyhow::{anyhow, Result};
 use futures::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use futures::{
-    FutureExt, StreamExt,
     future::BoxFuture,
     stream::{self, BoxStream},
+    FutureExt, StreamExt,
 };
-use gpui::{AnyView, App, AsyncApp, Context, Task, Window};
+use gpui::{AnyView, App, AppContext, AsyncApp, Context, EmptyView, Task, Window};
 use language_model::{
     AuthenticateError, LanguageModel, LanguageModelCompletionError, LanguageModelCompletionEvent,
     LanguageModelId, LanguageModelName, LanguageModelProvider, LanguageModelProviderId,
     LanguageModelProviderName, LanguageModelProviderState, LanguageModelRequest,
-    LanguageModelToolChoice, Role, StopReason,
+    LanguageModelToolChoice, LanguageModelToolUse, LanguageModelToolUseId, Role, StopReason,
 };
 use serde::Deserialize;
+use settings::Settings;
 use std::path::PathBuf;
 use std::sync::Arc;
-use ui::{List, prelude::*};
+use ui::IconName;
 use util::{command::new_smol_command, paths};
 
 const PROVIDER_ID: LanguageModelProviderId = LanguageModelProviderId::new("codex-cli");
 const PROVIDER_NAME: LanguageModelProviderName = LanguageModelProviderName::new("Codex CLI");
 const CODEX_CLI_SITE: &str = "https://github.com/microsoft/Codex-CLI";
-
 
 pub struct CodexCliLanguageModelProvider {
     state: gpui::Entity<State>,
@@ -43,7 +43,7 @@ impl State {
             return Task::ready(Ok(()));
         }
 
-        cx.spawn(|this, cx| async move {
+        cx.spawn(async move |this, cx| {
             let mut path = PathBuf::from(paths::home_dir());
             path.push(".codex");
             path.push("config.toml");
@@ -82,12 +82,14 @@ impl CodexCliLanguageModelProvider {
         Self { state }
     }
 
-    fn create_model(&self) -> Arc<dyn LanguageModel> {
+    fn create_model(&self, cx: &App) -> Arc<dyn LanguageModel> {
+        let settings = AllLanguageModelSettings::get_global(cx).codex_cli.clone();
         Arc::new(CodexCliLanguageModel {
             id: LanguageModelId::from("codex-cli".to_string()),
             name: LanguageModelName::from("Codex CLI".to_string()),
             model: "default".to_string(),
             state: self.state.clone(),
+            settings,
         })
     }
 }
@@ -111,16 +113,16 @@ impl LanguageModelProvider for CodexCliLanguageModelProvider {
         IconName::Ai
     }
 
-    fn default_model(&self, _cx: &App) -> Option<Arc<dyn LanguageModel>> {
-        Some(self.create_model())
+    fn default_model(&self, cx: &App) -> Option<Arc<dyn LanguageModel>> {
+        Some(self.create_model(cx))
     }
 
-    fn default_fast_model(&self, _cx: &App) -> Option<Arc<dyn LanguageModel>> {
-        Some(self.create_model())
+    fn default_fast_model(&self, cx: &App) -> Option<Arc<dyn LanguageModel>> {
+        Some(self.create_model(cx))
     }
 
-    fn provided_models(&self, _cx: &App) -> Vec<Arc<dyn LanguageModel>> {
-        vec![self.create_model()]
+    fn provided_models(&self, cx: &App) -> Vec<Arc<dyn LanguageModel>> {
+        vec![self.create_model(cx)]
     }
 
     fn is_authenticated(&self, cx: &App) -> bool {
@@ -137,35 +139,7 @@ impl LanguageModelProvider for CodexCliLanguageModelProvider {
         _window: &mut Window,
         cx: &mut App,
     ) -> AnyView {
-        cx.new(|cx| {
-            v_flex()
-                .gap_2()
-                .child(
-                    v_flex().gap_1().child(Label::new(
-                        "Codex CLI uses `~/.codex/config.toml` for authentication.",
-                    ))
-                    .child(
-                        List::new()
-                            .child(InstructionListItem::text_only(
-                                "Install the `codex` binary and ensure it is available on your PATH.",
-                            ))
-                            .child(InstructionListItem::text_only(
-                                "Authenticate by running `codex auth login` or by adding `api_key` to `~/.codex/config.toml`.",
-                            )),
-                    ),
-                )
-                .child(
-                    Button::new("codex-cli-site", "Codex CLI")
-                        .style(ButtonStyle::Subtle)
-                        .icon(IconName::ArrowUpRight)
-                        .icon_size(IconSize::Small)
-                        .icon_color(Color::Muted)
-                        .on_click(move |_, _window, cx| {
-                            cx.open_url(CODEX_CLI_SITE);
-                        }),
-                )
-        })
-        .into()
+        cx.new(|_| EmptyView).into()
     }
 
     fn reset_credentials(&self, cx: &mut App) -> Task<Result<()>> {
@@ -182,6 +156,7 @@ struct CodexCliLanguageModel {
     name: LanguageModelName,
     model: String,
     state: gpui::Entity<State>,
+    settings: CodexCliSettings,
 }
 
 impl LanguageModel for CodexCliLanguageModel {
@@ -206,10 +181,13 @@ impl LanguageModel for CodexCliLanguageModel {
         false
     }
     fn supports_tools(&self) -> bool {
-        false
+        true
     }
-    fn supports_tool_choice(&self, _choice: LanguageModelToolChoice) -> bool {
-        false
+    fn supports_tool_choice(&self, choice: LanguageModelToolChoice) -> bool {
+        matches!(
+            choice,
+            LanguageModelToolChoice::Auto | LanguageModelToolChoice::None
+        )
     }
     fn max_token_count(&self) -> u64 {
         0
@@ -236,16 +214,56 @@ impl LanguageModel for CodexCliLanguageModel {
     > {
         let state = self.state.clone();
         let model = self.model.clone();
-        async move {
-            let api_key = cx
-                .read_entity(&state, |state, _| state.api_key.clone())
-                .ok_or_else(|| LanguageModelCompletionError::Other(anyhow!("App state dropped")))?;
-            let api_key = api_key.ok_or(LanguageModelCompletionError::NoApiKey {
-                provider: PROVIDER_NAME,
-            })?;
+        let settings = self.settings.clone();
 
-            let mut cmd = new_smol_command("codex");
+        let api_key = match cx.read_entity(&state, |state, _| state.api_key.clone()) {
+            Ok(Some(key)) => key,
+            Ok(None) => {
+                return futures::future::ready(Err(LanguageModelCompletionError::NoApiKey {
+                    provider: PROVIDER_NAME,
+                }))
+                .boxed();
+            }
+            Err(_) => {
+                return futures::future::ready(Err(LanguageModelCompletionError::Other(anyhow!(
+                    "App state dropped",
+                ))))
+                .boxed();
+            }
+        };
+
+        async move {
+            let mut cmd = new_smol_command(&settings.binary_path);
             cmd.arg("exec").arg("--model").arg(&model);
+            for (name, server) in &settings.mcp_servers {
+                cmd.arg("--config").arg(format!(
+                    "mcp_servers.{name}.command={}",
+                    toml::Value::String(server.command.clone())
+                ));
+                if !server.args.is_empty() {
+                    let args_val = toml::Value::Array(
+                        server
+                            .args
+                            .iter()
+                            .cloned()
+                            .map(toml::Value::String)
+                            .collect(),
+                    );
+                    cmd.arg("--config")
+                        .arg(format!("mcp_servers.{name}.args={args_val}"));
+                }
+                if !server.env.is_empty() {
+                    let env_val = toml::Value::Table(
+                        server
+                            .env
+                            .iter()
+                            .map(|(k, v)| (k.clone(), toml::Value::String(v.clone())))
+                            .collect(),
+                    );
+                    cmd.arg("--config")
+                        .arg(format!("mcp_servers.{name}.env={env_val}"));
+                }
+            }
             cmd.env("CODEX_API_KEY", api_key);
             cmd.stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
@@ -265,7 +283,6 @@ impl LanguageModel for CodexCliLanguageModel {
                         Role::System => "system:",
                         Role::User => "user:",
                         Role::Assistant => "assistant:",
-                        Role::Tool => "tool:",
                     };
                     format!("{} {}\n", role, m.string_contents())
                 })
@@ -311,6 +328,35 @@ impl LanguageModel for CodexCliLanguageModel {
 
 fn parse_line(line: &str) -> LanguageModelCompletionEvent {
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+        if let Some(r#type) = value.get("type").and_then(|v| v.as_str()) {
+            if r#type == "tool" || r#type == "tool_use" {
+                if let (Some(id), Some(name), Some(input)) = (
+                    value.get("id").and_then(|v| v.as_str()),
+                    value
+                        .get("name")
+                        .or_else(|| value.get("tool_name"))
+                        .and_then(|v| v.as_str()),
+                    value.get("input"),
+                ) {
+                    let raw_input = value
+                        .get("raw_input")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let is_input_complete = value
+                        .get("is_input_complete")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    return LanguageModelCompletionEvent::ToolUse(LanguageModelToolUse {
+                        id: LanguageModelToolUseId::from(id.to_string()),
+                        name: name.into(),
+                        raw_input,
+                        input: input.clone(),
+                        is_input_complete,
+                    });
+                }
+            }
+        }
         if let Some(text) = value.get("content").and_then(|v| v.as_str()) {
             return LanguageModelCompletionEvent::Text(text.to_string());
         }
@@ -330,8 +376,8 @@ mod tests {
     #[gpui::test]
     fn registers_with_language_model_registry(cx: &mut TestAppContext) {
         // Initialize a test registry and register the Codex CLI provider
-        LanguageModelRegistry::test(cx);
         cx.update(|app| {
+            LanguageModelRegistry::test(app);
             let registry = LanguageModelRegistry::global(app);
             registry.update(app, |registry, cx| {
                 registry.register_provider(CodexCliLanguageModelProvider::new(cx), cx);
