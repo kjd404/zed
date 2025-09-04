@@ -167,8 +167,10 @@ You can configure a model to use [extended thinking](https://docs.anthropic.com/
    ```sh
    npm i -g @openai/codex
    # or
-   brew install openai/codex/codex
+   brew install codex
    ```
+
+   See the [Codex CLI repository](https://github.com/openai/codex) for additional installation options.
 
 2. Authenticate by running:
 
